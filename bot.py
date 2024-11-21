@@ -4,7 +4,7 @@ import sqlite3
 import os
 
 # Replace with your bot token
-BOT_TOKEN = "7832350585:AAHSroOqOu7SHwd5Gf_I9iJQ73hCd2qi9qY"
+BOT_TOKEN = "8166901002:AAEI4Ei7l8exk-q0F_LDqJAz4iO1R7xHrhM"
 AUTHORIZED_USERNAME = "@FlashShine"  # Authorized username
 NOTOSCAMS_BOT_ID = 777000  # Telegram's official bot ID for system messages (@notoscam)
 
@@ -156,5 +156,12 @@ async def main():
 
 if __name__ == "__main__":
     import asyncio
-    asyncio.run(main())
-            
+
+    try:
+        asyncio.run(main())
+    except RuntimeError as e:
+        if "This event loop is already running" in str(e):
+            print("Detected running event loop. Using alternative startup method.")
+            loop = asyncio.get_event_loop()
+            loop.create_task(main())
+            loop.run_forever()
