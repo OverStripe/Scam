@@ -6,7 +6,7 @@ import sqlite3
 import os
 
 # Replace with your bot token
-BOT_TOKEN = "7832350585:AAEFJUXzDnF05Qq-U6bl-POBo7QwXeUlKh8"
+BOT_TOKEN = "7832350585:AAExJWrewWujk-JwQnwgk0TmpALBejAIfx8"
 OWNER_ID = 7202072688  # Your Owner ID
 NOTOSCAMS_BOT_ID = 777000  # Telegram's official bot ID for system messages (@notoscam)
 
@@ -169,7 +169,7 @@ def main():
     dispatcher.add_handler(CommandHandler("viewreports", view_reports))
 
     # Monitor @notoscam messages
-    dispatcher.add_handler(MessageHandler(Filters.chat(NOTOSCAMS_BOT_ID) & Filters.text, monitor_notoscam))
+    dispatcher.add_handler(MessageHandler(filters.Chat(NOTOSCAMS_BOT_ID) & filters.TEXT, monitor_notoscam))
 
     # Start the bot
     updater.start_polling()
