@@ -28,16 +28,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Displays the help message with all available commands."""
     help_text = (
-        "🔹 **Available Commands** 🔹\n\n"
+        "🔹 *Available Commands* 🔹\n\n"
         "/s - Start the bot and get an introduction.\n"
-        "/rs <username> - Report a scammer to @notoscam.\n"
-        "/st <username> - Check if a user has a scam tag.\n"
-        "/as <username> - (Admin only) Add a scam tag manually.\n"
-        "/auto_report <username> - Automatically report the user until they get a scam tag.\n"
+        "/rs `<username>` - Report a scammer to @notoscam.\n"
+        "/st `<username>` - Check if a user has a scam tag.\n"
+        "/as `<username>` - (Admin only) Add a scam tag manually.\n"
+        "/auto_report `<username>` - Automatically report the user until they get a scam tag.\n"
         "/help - Show this help message.\n\n"
         "Use these commands to help report scammers and protect others!"
     )
-    await update.message.reply_text(help_text, parse_mode="Markdown")
+
+    # Use MarkdownV2 and escape special characters
+    await update.message.reply_text(help_text, parse_mode="MarkdownV2")
 
 # Command: /rs (Report Scammer)
 async def report_scammer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -148,7 +150,7 @@ async def add_scam_tag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 # Main function to start the bot
 def main():
-    TOKEN = "7832350585:AAHmwoNXua8H5EXdDkrWtU0lGqF25TlLv-E"  # Your bot's API token
+    TOKEN = "7832350585:AAE7Ow6epuk00lIF5VVBF5pjPFJAHGl70tY"  # Your bot's API token
     application = ApplicationBuilder().token(TOKEN).build()
 
     # Command handlers
