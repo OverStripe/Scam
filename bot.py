@@ -1,10 +1,10 @@
 from telegram import Update, Bot
-from telegram.ext import Application, CommandHandler, CallbackContext, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
 import sqlite3
 import os
 
 # Replace with your bot token
-BOT_TOKEN = "7832350585:AAG-BlrTwF5Sjpg_mrujQAi5nFDasO6eT0w"
+BOT_TOKEN = "7832350585:AAHSroOqOu7SHwd5Gf_I9iJQ73hCd2qi9qY"
 AUTHORIZED_USERNAME = "@FlashShine"  # Authorized username
 NOTOSCAMS_BOT_ID = 777000  # Telegram's official bot ID for system messages (@notoscam)
 
@@ -26,136 +26,135 @@ if not os.path.exists(DB_FILE):
 
 # Helper function to restrict access to @FlashShine
 def authorized_user_only(func):
-    def wrapper(update: Update, context: CallbackContext, *args, **kwargs):
+    async def wrapper(update: Update, context, *args, **kwargs):
         if update.effective_user.username != AUTHORIZED_USERNAME.lstrip("@"):
-            update.message.reply_text("Access Denied. This bot can only be used by @FlashShine.")
+            await update.message.reply_text("Access Denied. This bot can only be used by @FlashShine.")
             return
-        return func(update, context, *args, **kwargs)
+        return await func(update, context, *args, **kwargs)
     return wrapper
 
 
 # Start command
 @authorized_user_only
-def start(update: Update, context: CallbackContext) -> None:
-    update.message.reply_text(
+async def start(update: Update, context) -> None:
+    await update.message.reply_text(
         f"Welcome, {AUTHORIZED_USERNAME}!\n"
         "Commands:\n"
-        "- /report <username> - Report a user as a scammer.\n"
-        "- /status <username> - Check the status of a report.\n"
+        "- /report <username|group link|channel link> - Report a user, group, or channel as a scammer.\n"
+        "- /status <username|link> - Check the status of a report.\n"
         "- /viewreports - View all reports.\n"
         "- /help - Get help."
     )
 
 
-# Help command
-@authorized_user_only
-def help_command(update: Update, context: CallbackContext) -> None:
-    update.message.reply_text(
-        "Commands:\n"
-        "1. /report <username> - Report a user as a scammer.\n"
-        "2. /status <username> - Check the status of a report.\n"
-        "3. /viewreports - View all reports."
-    )
-
-
 # Report command
 @authorized_user_only
-def report(update: Update, context: CallbackContext) -> None:
+async def report(update: Update, context) -> None:
     if context.args:
-        username = context.args[0]
+        identifier = context.args[0]
         conn = sqlite3.connect(DB_FILE)
+
+        # Determine the type of report
+        if identifier.startswith("@"):
+            report_type = "user"
+        elif "t.me/" in identifier:
+            report_type = "group" if "group" in identifier else "channel"
+        else:
+            await update.message.reply_text("Invalid identifier. Please provide a valid username, group, or channel link.")
+            return
 
         # Store the report locally
         try:
             conn.execute(
                 "INSERT INTO reports (type, identifier) VALUES (?, ?)",
-                ("user", username)
+                (report_type, identifier)
             )
             conn.commit()
 
             # Notify the user
-            update.message.reply_text(f"Successfully reported {username} as a scammer. Sending to @notoscam...")
+            await update.message.reply_text(f"Successfully reported {identifier} as a {report_type}. Sending to @notoscam...")
 
             # Send the report to @notoscam
             bot = Bot(BOT_TOKEN)
             try:
-                bot.send_message(
+                await bot.send_message(
                     chat_id=NOTOSCAMS_BOT_ID,
                     text=(
-                        f"Hello, this user {username} is a scammer and he is scamming people by the name of helping them. "
-                        f"He takes money and then blocks the user. It's a humble request to Telegam that please give a scam tag "
-                        f"to this user so that users will come to know that he is a scammer. This will increase the trust of "
-                        f"Telegram in the eyes of its users. Thanks."
+                        f"Hello, this {report_type} {identifier} is scamming people. "
+                        f"It's a humble request to Telegram to give a scam tag to this {report_type} "
+                        f"so users will know it's untrustworthy. Thank you."
                     )
                 )
-                update.message.reply_text(f"Report for {username} has been successfully sent to @notoscam.")
+                await update.message.reply_text(f"Report for {identifier} has been successfully sent to @notoscam.")
             except Exception as e:
-                update.message.reply_text("Failed to send the report to @notoscam. Please try again later.")
+                await update.message.reply_text("Failed to send the report to @notoscam. Please try again later.")
         except sqlite3.IntegrityError:
-            update.message.reply_text(f"{username} has already been reported.")
+            await update.message.reply_text(f"{identifier} has already been reported.")
         finally:
             conn.close()
     else:
-        update.message.reply_text("Please provide a username to report. Example: /report @username")
+        await update.message.reply_text("Please provide a username, group, or channel to report. Example: /report @username")
 
 
 # Check the status of a report
 @authorized_user_only
-def status(update: Update, context: CallbackContext) -> None:
+async def status(update: Update, context) -> None:
     if context.args:
-        username = context.args[0]
+        identifier = context.args[0]
         conn = sqlite3.connect(DB_FILE)
         try:
             report = conn.execute(
                 "SELECT type, status FROM reports WHERE identifier = ?",
-                (username,)
+                (identifier,)
             ).fetchone()
 
             if report:
                 report_type, status = report
-                update.message.reply_text(
-                    f"Status of {username}:\n"
+                await update.message.reply_text(
+                    f"Status of {identifier}:\n"
                     f"- Type: {report_type.capitalize()}\n"
                     f"- Status: {status.capitalize()}"
                 )
             else:
-                update.message.reply_text(f"No report found for {username}.")
+                await update.message.reply_text(f"No report found for {identifier}.")
         finally:
             conn.close()
     else:
-        update.message.reply_text("Please provide a username to check the status. Example: /status @username")
+        await update.message.reply_text("Please provide a username or link to check the status. Example: /status @username")
 
 
 # View all reports
 @authorized_user_only
-def view_reports(update: Update, context: CallbackContext) -> None:
+async def view_reports(update: Update, context) -> None:
     conn = sqlite3.connect(DB_FILE)
-    reports = conn.execute("SELECT identifier, status FROM reports").fetchall()
+    reports = conn.execute("SELECT type, identifier, status FROM reports").fetchall()
     conn.close()
 
     if reports:
         report_list = "\n".join(
-            [f"- {identifier}: {status.capitalize()}" for identifier, status in reports]
+            [f"- Type: {report_type.capitalize()}, Identifier: {identifier}, Status: {status.capitalize()}" 
+             for report_type, identifier, status in reports]
         )
-        update.message.reply_text(f"Reported Users:\n{report_list}")
+        await update.message.reply_text(f"Reported Entities:\n{report_list}")
     else:
-        update.message.reply_text("No reports have been made yet.")
+        await update.message.reply_text("No reports have been made yet.")
 
 
-def main():
+async def main():
     # Create the Application with your bot token
     application = Application.builder().token(BOT_TOKEN).build()
 
     # Register command handlers
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("report", report))
     application.add_handler(CommandHandler("status", status))
     application.add_handler(CommandHandler("viewreports", view_reports))
 
     # Run the bot with infinite polling
-    application.run_polling(stop_signals=None)
+    await application.run_polling(stop_signals=None)
 
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())
+            
