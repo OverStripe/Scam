@@ -2,11 +2,18 @@ from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 import sqlite3
 import os
+import logging
 
 # Replace with your bot token
-BOT_TOKEN = "8166901002:AAF0YIknEIP2RwXvxK0It1kYgmiAGKWPxv0"
-AUTHORIZED_USERNAME = "@FlashShine"  # Authorized username
+BOT_TOKEN = "8166901002:AAHuftmm07CSy5-VznHQv-iPjJD-I3916zw"
 NOTOSCAMS_BOT_ID = 777000  # Telegram's official bot ID for system messages (@notoscam)
+
+# Initialize logging
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 # Initialize SQLite database for scam reports
 DB_FILE = "restricted_bot.db"
@@ -24,31 +31,25 @@ if not os.path.exists(DB_FILE):
     conn.close()
 
 
-# Helper function to restrict access to @FlashShine
-def authorized_user_only(func):
-    async def wrapper(update: Update, context, *args, **kwargs):
-        if update.effective_user.username != AUTHORIZED_USERNAME.lstrip("@"):
-            await update.message.reply_text("Access Denied. This bot can only be used by @FlashShine.")
-            return
-        return await func(update, context, *args, **kwargs)
-    return wrapper
-
-
 # Start command
-@authorized_user_only
 async def start(update: Update, context) -> None:
     await update.message.reply_text(
-        f"Welcome, {AUTHORIZED_USERNAME}!\n"
+        "Welcome!\n"
         "Commands:\n"
         "- /report <username|group link|channel link> - Report a user, group, or channel as a scammer.\n"
         "- /status <username|link> - Check the status of a report.\n"
         "- /viewreports - View all reports.\n"
+        "- /hello - Confirm the bot is active.\n"
         "- /help - Get help."
     )
 
 
+# Hello command to confirm the bot is active
+async def hello(update: Update, context) -> None:
+    await update.message.reply_text("Hello! The bot is active and ready to assist.")
+
+
 # Report command
-@authorized_user_only
 async def report(update: Update, context) -> None:
     if context.args:
         identifier = context.args[0]
@@ -97,7 +98,6 @@ async def report(update: Update, context) -> None:
 
 
 # Check the status of a report
-@authorized_user_only
 async def status(update: Update, context) -> None:
     if context.args:
         identifier = context.args[0]
@@ -124,7 +124,6 @@ async def status(update: Update, context) -> None:
 
 
 # View all reports
-@authorized_user_only
 async def view_reports(update: Update, context) -> None:
     conn = sqlite3.connect(DB_FILE)
     reports = conn.execute("SELECT type, identifier, status FROM reports").fetchall()
@@ -141,7 +140,7 @@ async def view_reports(update: Update, context) -> None:
 
 
 async def main():
-    # Create the Application with your bot token
+    logger.info("Initializing bot...")
     application = Application.builder().token(BOT_TOKEN).build()
 
     # Register command handlers
@@ -149,7 +148,9 @@ async def main():
     application.add_handler(CommandHandler("report", report))
     application.add_handler(CommandHandler("status", status))
     application.add_handler(CommandHandler("viewreports", view_reports))
+    application.add_handler(CommandHandler("hello", hello))  # Add hello handler
 
-    # Run the bot with infinite polling
-    print("Bot is starting and will run indefinitely...")
-    await application.run_polling(stop_signals=None)  # Keeps the bot running
+    # Start polling
+    logger.info("Starting polling...")
+    await application.run_polling(stop_signals=None)
+    logger.info("Bot is running.")
