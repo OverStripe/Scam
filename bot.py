@@ -1,7 +1,5 @@
 from telegram import Update, Bot
-from telegram.ext import (
-    Updater, CommandHandler, CallbackContext, MessageHandler, filters
-)
+from telegram.ext import Application, CommandHandler, CallbackContext, MessageHandler, filters
 import sqlite3
 import os
 
@@ -46,6 +44,7 @@ def start(update: Update, context: CallbackContext) -> None:
         "Commands:\n"
         "- /report <username> - Report a user as a scammer.\n"
         "- /report <group/channel link> - Report a group or channel.\n"
+        "- /status <username> - Check the status of a report.\n"
         "- /viewreports - View all reports.\n"
         "- /help - Get help."
     )
@@ -58,7 +57,8 @@ def help_command(update: Update, context: CallbackContext) -> None:
         "Owner Commands:\n"
         "1. /report <username> - Report a user as a scammer.\n"
         "2. /report <group/channel link> - Report a suspicious group or channel.\n"
-        "3. /viewreports - View all reports."
+        "3. /status <username> - Check the status of a report.\n"
+        "4. /viewreports - View all reports."
     )
 
 
@@ -115,6 +115,33 @@ def report(update: Update, context: CallbackContext) -> None:
         update.message.reply_text("Please provide a username, group, or channel to report. Example: /report @username")
 
 
+# Check the status of a report
+@owner_only
+def status(update: Update, context: CallbackContext) -> None:
+    if context.args:
+        identifier = context.args[0]
+        conn = sqlite3.connect(DB_FILE)
+        try:
+            report = conn.execute(
+                "SELECT type, status FROM reports WHERE identifier = ?",
+                (identifier,)
+            ).fetchone()
+
+            if report:
+                report_type, status = report
+                update.message.reply_text(
+                    f"Status of {identifier}:\n"
+                    f"- Type: {report_type.capitalize()}\n"
+                    f"- Status: {status.capitalize()}"
+                )
+            else:
+                update.message.reply_text(f"No report found for {identifier}.")
+        finally:
+            conn.close()
+    else:
+        update.message.reply_text("Please provide a username to check the status. Example: /status @username")
+
+
 # Monitor @notoscam for scam tagging
 @owner_only
 def monitor_notoscam(update: Update, context: CallbackContext) -> None:
@@ -159,21 +186,21 @@ def view_reports(update: Update, context: CallbackContext) -> None:
 
 
 def main():
-    updater = Updater(BOT_TOKEN)
-    dispatcher = updater.dispatcher
+    # Create the Application with your bot token
+    application = Application.builder().token(BOT_TOKEN).build()
 
     # Register command handlers
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(CommandHandler("help", help_command))
-    dispatcher.add_handler(CommandHandler("report", report))
-    dispatcher.add_handler(CommandHandler("viewreports", view_reports))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("report", report))
+    application.add_handler(CommandHandler("status", status))
+    application.add_handler(CommandHandler("viewreports", view_reports))
 
     # Monitor @notoscam messages
-    dispatcher.add_handler(MessageHandler(filters.Chat(NOTOSCAMS_BOT_ID) & filters.TEXT, monitor_notoscam))
+    application.add_handler(MessageHandler(filters.Chat(NOTOSCAMS_BOT_ID) & filters.TEXT, monitor_notoscam))
 
-    # Start the bot
-    updater.start_polling()
-    updater.idle()
+    # Run the bot
+    application.run_polling()
 
 
 if __name__ == "__main__":
