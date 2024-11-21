@@ -2,17 +2,17 @@ import logging
 import os
 import aiosqlite
 from telegram import Update, Bot, InlineQueryResultArticle, InputTextMessageContent
-from telegram.ext import Application, CommandHandler, InlineQueryHandler, CallbackContext, RateLimiter
+from telegram.ext import Application, CommandHandler, InlineQueryHandler, CallbackContext, AIORateLimiter
 
 # Replace with your bot token and admin info
-BOT_TOKEN = "7832350585:AAF-b1cG403Kfk6PmkaGo5vhlbaNBguSFMw"
-ADMIN_CHAT_ID = 7202072688  # Replace with the admin's Telegram user ID
-NOTOSCAMS_BOT_ID = 777000
+BOT_TOKEN = "7832350585:AAG9T1Vucn1I2-eOA4DTMVPW24aCOpSwSYk"
+ADMIN_CHAT_ID = 7202072688  # Replace with your admin's Telegram user ID
+NOTOSCAMS_BOT_ID = 777000  # Official Telegram bot for scam reports
 
 # Initialize logging
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.DEBUG
+    level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
@@ -38,14 +38,14 @@ async def start(update: Update, context: CallbackContext) -> None:
     logger.info(f"Received /start from {update.effective_user.username}")
     await update.message.reply_text(
         "👋 Welcome to the Scam Reporter Bot!\n\n"
-        "You can report scammers, groups, or channels and check the status of your reports.\n"
-        "Commands:\n"
+        "You can report scammers, groups, or channels and check the status of your reports.\n\n"
+        "Available Commands:\n"
         "- /hello: Check if the bot is active.\n"
         "- /report <username|group link|channel link>: Report a scammer.\n"
         "- /status <username|link>: Check the status of a report.\n"
         "- /viewreports: View all reports.\n"
         "- /help: Get help.\n"
-        "- Use @BotName inline to search commands dynamically."
+        "- Use @BotName inline for quick commands."
     )
 
 # Command: /hello
@@ -99,7 +99,7 @@ async def report(update: Update, context: CallbackContext) -> None:
                 await update.message.reply_text("❌ Failed to send the report to @notoscam. Please try again later.")
 
             # Notify admin
-            await bot.send_message(chat_id=ADMIN_CHAT_ID, text=f"📢 A new report was submitted: {identifier} ({report_type})")
+            await bot.send_message(chat_id=ADMIN_CHAT_ID, text=f"📢 New report submitted: {identifier} ({report_type})")
 
         except aiosqlite.IntegrityError:
             await update.message.reply_text(f"⚠️ {identifier} has already been reported.")
@@ -144,12 +144,12 @@ async def view_reports(update: Update, context: CallbackContext) -> None:
 async def help_command(update: Update, context: CallbackContext) -> None:
     await update.message.reply_text(
         "💡 Help Menu:\n"
-        "- /start: Start the bot\n"
-        "- /hello: Check if the bot is active\n"
-        "- /report <username|group|channel>: Report a scammer\n"
-        "- /status <username|link>: Check report status\n"
-        "- /viewreports: View all reports\n"
-        "- Use @BotName inline to interact dynamically."
+        "- /start: Start the bot.\n"
+        "- /hello: Check if the bot is active.\n"
+        "- /report <username|group|channel>: Report a scammer.\n"
+        "- /status <username|link>: Check report status.\n"
+        "- /viewreports: View all reports.\n"
+        "- Use @BotName inline for quick commands."
     )
 
 # Inline Queries
@@ -175,7 +175,7 @@ async def inline_query(update: Update, context: CallbackContext) -> None:
 async def main():
     logger.info("Starting bot...")
     await initialize_database()
-    application = Application.builder().token(BOT_TOKEN).rate_limiter(RateLimiter()).build()
+    application = Application.builder().token(BOT_TOKEN).rate_limiter(AIORateLimiter()).build()
 
     # Register command handlers
     application.add_handler(CommandHandler("start", start))
