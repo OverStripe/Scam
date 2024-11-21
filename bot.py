@@ -4,7 +4,7 @@ import sqlite3
 import os
 
 # Replace with your bot token
-BOT_TOKEN = "8166901002:AAEI4Ei7l8exk-q0F_LDqJAz4iO1R7xHrhM"
+BOT_TOKEN = "8166901002:AAF0YIknEIP2RwXvxK0It1kYgmiAGKWPxv0"
 AUTHORIZED_USERNAME = "@FlashShine"  # Authorized username
 NOTOSCAMS_BOT_ID = 777000  # Telegram's official bot ID for system messages (@notoscam)
 
@@ -151,17 +151,5 @@ async def main():
     application.add_handler(CommandHandler("viewreports", view_reports))
 
     # Run the bot with infinite polling
-    await application.run_polling(stop_signals=None)
-
-
-if __name__ == "__main__":
-    import asyncio
-
-    try:
-        asyncio.run(main())
-    except RuntimeError as e:
-        if "This event loop is already running" in str(e):
-            print("Detected running event loop. Using alternative startup method.")
-            loop = asyncio.get_event_loop()
-            loop.create_task(main())
-            loop.run_forever()
+    print("Bot is starting and will run indefinitely...")
+    await application.run_polling(stop_signals=None)  # Keeps the bot running
