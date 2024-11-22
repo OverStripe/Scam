@@ -1,23 +1,37 @@
+from telethon import TelegramClient, errors
+from telethon.tl.types import ChannelParticipantsAdmins
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 import asyncio
 import time
-from telethon import TelegramClient, errors
-from telethon.tl.types import ChannelParticipantsAdmins
+import re
 
 # Your Telegram API credentials
 api_id = 28142132
 api_hash = '82fe6161120bd237293a4d6da61808e3'
-bot_token = '8166901002:AAEQpQN9fuJbe9YEjTDURS43790f-RabMFc'
+bot_token = '8166901002:AAGIb0YmsjIUHNtx_prQNgkdynq_cj0dEtM'
 
 client = TelegramClient('session_name', api_id, api_hash)
 time_gap = 2  # Time gap (in seconds) between each message
+batch_delay = 10  # Delay (in seconds) between batches
+batch_size = 100  # Number of members to process per batch
 target_group_invite_link = "https://t.me/clash_of_clans_accounts_Group"  # Replace with your target group invite link
+
+
+def extract_group_name(group_link: str) -> str:
+    """
+    Extract the group username or ID from the provided group link.
+    """
+    match = re.match(r'(https?://)?t\.me/([^/?]+)', group_link)
+    if match:
+        return match.group(2)
+    else:
+        return group_link  # If it's not a link, assume it's a username or ID
 
 
 async def scrape_and_invite(group_name, update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Scrape members from a group, exclude admins, and send invites automatically.
+    Scrape members from a group, exclude admins, and send invites automatically in batches.
     """
     try:
         await client.start()
@@ -33,20 +47,25 @@ async def scrape_and_invite(group_name, update: Update, context: ContextTypes.DE
 
         # Exclude admins from participants
         members = []
-        with open("group_members.csv", "w") as file:
-            file.write("user_id,username,first_name,last_name\n")
-            for user in participants:
-                if user.id not in admin_ids:  # Exclude admins
-                    user_id = user.id
-                    username = user.username or "No Username"
-                    first_name = user.first_name or "No First Name"
-                    last_name = user.last_name or "No Last Name"
-                    members.append({"id": user_id, "username": username, "first_name": first_name, "last_name": last_name})
-                    file.write(f"{user_id},{username},{first_name},{last_name}\n")
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Members (excluding admins) successfully saved to 'group_members.csv'.")
+        for user in participants:
+            if user.id not in admin_ids:  # Exclude admins
+                user_id = user.id
+                username = user.username or "No Username"
+                first_name = user.first_name or "No First Name"
+                last_name = user.last_name or "No Last Name"
+                members.append({"id": user_id, "username": username, "first_name": first_name, "last_name": last_name})
 
-        # Automatically send invites
-        await send_invites(members, target_group_invite_link, update, context)
+        # Automatically send invites in batches
+        total_batches = (len(members) + batch_size - 1) // batch_size
+        for batch_index in range(total_batches):
+            start_index = batch_index * batch_size
+            end_index = start_index + batch_size
+            batch = members[start_index:end_index]
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Processing Batch {batch_index + 1}/{total_batches}...")
+            await send_invites(batch, target_group_invite_link, update, context)
+            if batch_index < total_batches - 1:
+                await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Waiting {batch_delay} seconds before the next batch...")
+                await asyncio.sleep(batch_delay)
 
     except Exception as e:
         await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Error: {e}")
@@ -56,7 +75,7 @@ async def scrape_and_invite(group_name, update: Update, context: ContextTypes.DE
 
 async def send_invites(members, invite_link, update: Update, context: ContextTypes.DEFAULT_TYPE, retry_attempts=3):
     """
-    Send invite links to all scraped members.
+    Send invite links to a batch of members.
     """
     successful_invites = []
     failed_invites = []
@@ -90,17 +109,9 @@ async def send_invites(members, invite_link, update: Update, context: ContextTyp
                 if attempt == retry_attempts:  # Log only after final retry attempt
                     failed_invites.append({"id": member['id'], "username": member['username'], "reason": str(e)})
 
-    # Log results
-    with open("successful_invites.log", "w") as success_file:
-        for member in successful_invites:
-            success_file.write(f"{member['id']},{member['username']}\n")
-    with open("failed_invites.log", "w") as fail_file:
-        for member in failed_invites:
-            fail_file.write(f"{member['id']},{member['username']},{member['reason']}\n")
-
-    # Generate summary report
+    # Generate summary for the batch
     summary = (
-        f"Invitation Summary:\n"
+        f"Batch Summary:\n"
         f"Total Members Processed: {total_members}\n"
         f"Successfully Invited: {len(successful_invites)}\n"
         f"Failed Invites: {len(failed_invites)}\n"
@@ -110,25 +121,26 @@ async def send_invites(members, invite_link, update: Update, context: ContextTyp
 
 async def scrape(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Trigger scraping and invite sending.
+    Trigger scraping and invite sending in batches using a group link.
     """
     if len(context.args) < 1:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Usage: /scrape <group_name>")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Usage: /scrape <group_link_or_username>")
         return
 
-    group_name = context.args[0]
+    group_input = context.args[0]
+    group_name = extract_group_name(group_input)  # Extract username or ID from the link
     await scrape_and_invite(group_name, update, context)
 
 
 def main():
     """
-    Main function to run the bot.
+    Main function to run the bot with infinite polling.
     """
     application = Application.builder().token(bot_token).build()
 
     application.add_handler(CommandHandler("scrape", scrape))
 
-    application.run_polling()
+    application.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
 
 
 if __name__ == "__main__":
