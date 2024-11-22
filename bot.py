@@ -1,209 +1,154 @@
+from telethon import TelegramClient, errors
+from telethon.tl.functions.channels import GetParticipantsRequest
+from telethon.tl.types import ChannelParticipantsAdmins, ChannelParticipantsSearch
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from telegram.error import TelegramError
+from telegram.ext import Updater, CommandHandler, CallbackContext
 import asyncio
-from datetime import datetime
+import time
 
-# Replace this with the chat ID or username of the group to send scam reports
-REPORT_CHANNEL = "@notoscam"
+# Your Telegram API credentials
+api_id = 28142132  # Replace with your Telegram API ID
+api_hash = '82fe6161120bd237293a4d6da61808e3'  # Replace with your Telegram API Hash
+bot_token = '8166901002:AAEQpQN9fuJbe9YEjTDURS43790f-RabMFc'  # Replace with your Telegram bot token
 
-# In-memory database to simulate scam tags for simplicity
-scam_tagged_users = set()  # Replace with a persistent database for production
+client = TelegramClient('session_name', api_id, api_hash)
+time_gap = 2  # Time gap (in seconds) between each message
+target_group_invite_link = "https://t.me/clash_of_clans_accounts_Group"  # Replace with your target group invite link
 
-# Automated reporting in progress
-auto_reporting = {}
 
-# Command: /start
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Welcome message for the bot."""
-    user_first_name = update.effective_user.first_name
-    await update.message.reply_text(
-        f"Hello, {user_first_name}! Welcome to FlashShine's Anti-Scam Bot.\n\n"
-        f"I am here to help identify scammers and protect the Telegram community. Use the /help command to see available actions."
+async def scrape_and_invite(group_name, update: Update):
+    """
+    Scrape members from a group, exclude admins, and send invites automatically.
+    """
+    try:
+        await client.start()
+
+        # Fetch all participants
+        participants = await client.get_participants(group_name)
+        update.message.reply_text(f"Fetched {len(participants)} members from {group_name}.")
+
+        # Fetch all admins
+        admins = await client.get_participants(group_name, filter=ChannelParticipantsAdmins)
+        admin_ids = {admin.id for admin in admins}
+        update.message.reply_text(f"Identified {len(admins)} admins. They will be excluded from invites.")
+
+        # Exclude admins from participants
+        members = []
+        with open("group_members.csv", "w") as file:
+            file.write("user_id,username,first_name,last_name\n")
+            for user in participants:
+                if user.id not in admin_ids:  # Exclude admins
+                    user_id = user.id
+                    username = user.username or "No Username"
+                    first_name = user.first_name or "No First Name"
+                    last_name = user.last_name or "No Last Name"
+                    members.append({"id": user_id, "username": username, "first_name": first_name, "last_name": last_name})
+                    file.write(f"{user_id},{username},{first_name},{last_name}\n")
+        update.message.reply_text(f"Members (excluding admins) successfully saved to 'group_members.csv'.")
+
+        # Automatically send invites
+        await send_invites(members, target_group_invite_link, update)
+
+    except Exception as e:
+        update.message.reply_text(f"Error: {e}")
+    finally:
+        await client.disconnect()
+
+
+async def send_invites(members, invite_link, update: Update, retry_attempts=3):
+    """
+    Send invite links to all scraped members.
+    """
+    successful_invites = []
+    failed_invites = []
+    total_members = len(members)
+
+    for index, member in enumerate(members):
+        for attempt in range(1, retry_attempts + 1):
+            try:
+                # Send personalized invite
+                message = (
+                    f"Hi {member['first_name']},\n\n"
+                    f"Join our exclusive group for exciting updates!\n\n"
+                    f"Click here: {invite_link}"
+                )
+                await client.send_message(member['id'], message)
+                successful_invites.append(member)
+                update.message.reply_text(f"({index+1}/{total_members}) Invite sent to {member['first_name']} ({member['username']}).")
+
+                # Add time gap
+                time.sleep(time_gap)
+                break  # Exit the retry loop on success
+            except errors.FloodWaitError as e:
+                update.message.reply_text(f"Rate limit hit. Waiting for {e.seconds} seconds. Retry attempt {attempt}/{retry_attempts}.")
+                await asyncio.sleep(e.seconds)
+            except errors.UserPrivacyRestrictedError:
+                update.message.reply_text(f"Cannot send message to {member['first_name']} ({member['username']}): Privacy restriction.")
+                failed_invites.append({"id": member['id'], "username": member['username'], "reason": "Privacy Restriction"})
+                break  # Skip retries for privacy issues
+            except Exception as e:
+                update.message.reply_text(f"Failed to send message to {member['first_name']} ({member['username']}): {e}. Retry attempt {attempt}/{retry_attempts}.")
+                if attempt == retry_attempts:  # Log only after final retry attempt
+                    failed_invites.append({"id": member['id'], "username": member['username'], "reason": str(e)})
+
+    # Log results
+    with open("successful_invites.log", "w") as success_file:
+        for member in successful_invites:
+            success_file.write(f"{member['id']},{member['username']}\n")
+    with open("failed_invites.log", "w") as fail_file:
+        for member in failed_invites:
+            fail_file.write(f"{member['id']},{member['username']},{member['reason']}\n")
+
+    # Generate summary report
+    summary = (
+        f"Invitation Summary:\n"
+        f"Total Members Processed: {total_members}\n"
+        f"Successfully Invited: {len(successful_invites)}\n"
+        f"Failed Invites: {len(failed_invites)}\n"
+    )
+    update.message.reply_text(summary)
+
+
+def start(update: Update, context: CallbackContext):
+    """
+    Start command for the bot.
+    """
+    update.message.reply_text(
+        "Welcome to the Telegram Scraper Bot!\n\n"
+        "Commands:\n"
+        "/scrape <group_name> - Scrape members (excluding admins) and send invites automatically"
     )
 
-# Command: /help
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Displays the help message with all available commands."""
-    help_text = (
-        "📋 *List of Commands*\n\n"
-        "1. /start - Start the bot and get an introduction.\n"
-        "2. /rs `<username>` - Report a scammer to @notoscam.\n"
-        "3. /st `<username>` - Check if a user has a scam tag.\n"
-        "4. /as `<username>` - (Admin only) Add a scam tag manually.\n"
-        "5. /auto_report `<username>` - Automatically report a user every 5 minutes until they receive a scam tag.\n"
-        "6. /mass_reporting `<user1> <user2> ...` - Report multiple scammers simultaneously.\n"
-        "7. /spread `<username>` - Notify others to report a scammer collaboratively.\n"
-        "8. /help - Show this help message.\n\n"
-        "⚠️ Note: The /auto_report feature will ensure scam reports continue until the user receives a scam tag."
-    )
 
-    await update.message.reply_text(help_text, parse_mode="MarkdownV2")
+def scrape(update: Update, context: CallbackContext):
+    """
+    Trigger scraping and invite sending.
+    """
+    if len(context.args) < 1:
+        update.message.reply_text("Usage: /scrape <group_name>")
+        return
 
-# Command: /rs (Report Scammer)
-async def report_scammer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handles reporting a user as a scammer."""
-    try:
-        if not context.args:
-            await update.message.reply_text("Usage: /rs <username>")
-            return
+    group_name = context.args[0]
 
-        reported_user = context.args[0]
-        report_message = (
-            f"**Scam Report Request**\n\n"
-            f"**Reported User**: @{reported_user}\n\n"
-            f"This individual has been reported for scamming users by pretending to help them. "
-            f"They request payment and subsequently block users after receiving money.\n\n"
-            f"Kindly review this account and assign a *scam tag* to warn others and maintain a safe community environment.\n\n"
-            f"Your prompt action on this matter will help enhance trust in Telegram. Thank you for your efforts.\n\n"
-            f"**Report Timestamp**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        )
-        await context.bot.send_message(chat_id=REPORT_CHANNEL, text=report_message, parse_mode="MarkdownV2")
-        await update.message.reply_text(f"The user @{reported_user} has been reported to @notoscam for further review.")
-    except TelegramError as e:
-        await update.message.reply_text("Error: Unable to send the report. Please try again.")
-        print(f"Error in /rs command: {e}")
+    async def process_scrape_and_invite():
+        await scrape_and_invite(group_name, update)
 
-# Command: /auto_report (Automated Reporting)
-async def auto_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Automatically reports a user to @notoscam every 5 minutes until they get a scam tag."""
-    try:
-        if not context.args:
-            await update.message.reply_text("Usage: /auto_report <username>")
-            return
+    asyncio.run(process_scrape_and_invite())
 
-        username = context.args[0]
 
-        # Check if reporting is already in progress
-        if username in auto_reporting:
-            await update.message.reply_text(f"Automated reporting for @{username} is already in progress.")
-            return
-
-        # Start automated reporting
-        auto_reporting[username] = True
-        await update.message.reply_text(f"Automated reporting for @{username} has started. Reports will continue every 5 minutes until the user receives a scam tag.")
-
-        while auto_reporting[username]:
-            if username in scam_tagged_users:
-                await update.message.reply_text(f"The user @{username} has been assigned a scam tag. Automated reporting has stopped.")
-                auto_reporting.pop(username, None)
-                break
-
-            # Send the report message
-            report_message = (
-                f"**Scam Report Request**\n\n"
-                f"**Reported User**: @{username}\n\n"
-                f"This individual has been reported for scamming users by pretending to help them. "
-                f"They request payment and subsequently block users after receiving money.\n\n"
-                f"Kindly review this account and assign a *scam tag* to warn others and maintain a safe community environment.\n\n"
-                f"Your prompt action on this matter will help enhance trust in Telegram. Thank you for your efforts.\n\n"
-                f"**Report Timestamp**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-            )
-            await context.bot.send_message(chat_id=REPORT_CHANNEL, text=report_message, parse_mode="MarkdownV2")
-            await update.message.reply_text(f"Another report for @{username} has been submitted. Reports will continue every 5 minutes until a scam tag is assigned.")
-            await asyncio.sleep(300)  # Wait 5 minutes (300 seconds) before sending the next report
-    except Exception as e:
-        auto_reporting.pop(username, None)
-        await update.message.reply_text("Error: Unable to start automated reporting. Please try again.")
-        print(f"Error in /auto_report command: {e}")
-
-# Command: /spread (Encourage Collaborative Reporting)
-async def spread_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Encourage users to report a scammer collaboratively."""
-    try:
-        if not context.args:
-            await update.message.reply_text("Usage: /spread <username>")
-            return
-
-        username = context.args[0]
-        spread_message = (
-            f"Attention: A scammer @{username} has been identified.\n\n"
-            f"We need your help to report this user to Telegram. Please use the /rs <username> command or manually flag their account to ensure they receive a scam tag.\n\n"
-            f"Collaborative efforts will help protect the community and prevent further scams. Thank you for your support!"
-        )
-        await update.message.reply_text(spread_message)
-    except Exception as e:
-        await update.message.reply_text("Error: Unable to share the message. Please try again.")
-        print(f"Error in /spread command: {e}")
-
-# Command: /mass_reporting (Report Multiple Scammers)
-async def mass_reporting(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Reports multiple users as scammers."""
-    try:
-        if not context.args:
-            await update.message.reply_text("Usage: /mass_reporting <username1> <username2> ...")
-            return
-
-        reported_users = context.args
-        for user in reported_users:
-            report_message = (
-                f"**Scam Report Request**\n\n"
-                f"**Reported User**: @{user}\n\n"
-                f"This individual has been reported for scamming users by pretending to help them. "
-                f"They request payment and subsequently block users after receiving money.\n\n"
-                f"Kindly review this account and assign a *scam tag* to warn others and maintain a safe community environment.\n\n"
-                f"Your prompt action on this matter will help enhance trust in Telegram. Thank you for your efforts.\n\n"
-                f"**Report Timestamp**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-            )
-            await context.bot.send_message(chat_id=REPORT_CHANNEL, text=report_message, parse_mode="MarkdownV2")
-            await asyncio.sleep(2)  # Delay to avoid spamming
-
-        await update.message.reply_text(f"Mass reporting completed for users: {', '.join(reported_users)}.")
-    except TelegramError as e:
-        await update.message.reply_text("Error: Unable to complete mass reporting. Please try again.")
-        print(f"Error in /mass_reporting command: {e}")
-
-# Command: /st (Check Scam Tag Status)
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Checks if a user has a scam tag."""
-    try:
-        if not context.args:
-            await update.message.reply_text("Usage: /st <username>")
-            return
-
-        username = context.args[0]
-        if username in scam_tagged_users:
-            await update.message.reply_text(f"The user @{username} currently has a scam tag.")
-        else:
-            await update.message.reply_text(f"The user @{username} does not have a scam tag yet.")
-    except Exception as e:
-        await update.message.reply_text("Error: Unable to check the status. Please try again.")
-        print(f"Error in /st command: {e}")
-
-# Command: /as (Admin-Only: Add Scam Tag)
-async def add_scam_tag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Manually adds a scam tag to a user."""
-    try:
-        if not context.args:
-            await update.message.reply_text("Usage: /as <username>")
-            return
-
-        username = context.args[0]
-        scam_tagged_users.add(username)
-        auto_reporting.pop(username, None)  # Stop auto-reporting if the tag is added
-        await update.message.reply_text(f"The user @{username} has been manually assigned a scam tag by an admin.")
-    except Exception as e:
-        await update.message.reply_text("Error: Unable to assign a scam tag. Please try again.")
-        print(f"Error in /as command: {e}")
-
-# Main function to start the bot
 def main():
-    TOKEN = "7832350585:AAEkP_YPu9-ycbyP4fMm0M9quh5fLbICZd4"  # Replace with your actual bot token
-    application = ApplicationBuilder().token(TOKEN).build()
+    """
+    Main function to run the bot.
+    """
+    updater = Updater(token=bot_token, use_context=True)
+    dp = updater.dispatcher
 
-    # Command handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("rs", report_scammer))
-    application.add_handler(CommandHandler("auto_report", auto_report))
-    application.add_handler(CommandHandler("spread", spread_message))
-    application.add_handler(CommandHandler("mass_reporting", mass_reporting))
-    application.add_handler(CommandHandler("st", status))
-    application.add_handler(CommandHandler("as", add_scam_tag))
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("scrape", scrape))
 
-    print("Bot is running...")
-    application.run_polling()
+    updater.start_polling()
+    updater.idle()
+
 
 if __name__ == "__main__":
     main()
-    
