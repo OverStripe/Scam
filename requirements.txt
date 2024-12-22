@@ -1,4 +1,2 @@
 python-telegram-bot==20.0
-smtplib==3.11.5
-email==6.0.0
 asyncio==3.4.3
